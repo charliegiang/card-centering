@@ -7,7 +7,7 @@ const ASPECT = CARD_W / CARD_H;
 
 // Gradient units: colour magnitude of a central difference on 0-255 values.
 const NOISE_FLOOR = 8; // below this a gradient is treated as texture noise
-const CLIP = 30; // above this every edge counts the same, so faint-but-long edges are not drowned out
+const CLIP = 60; // above this every edge counts the same, so faint-but-long edges are not drowned out
 
 /** Downscale (area average) an ImageData-like { data, width, height } to at most maxDim, as float RGB planes. */
 function workImage(src, maxDim) {
@@ -86,11 +86,11 @@ function gradients(ch, w, h) {
   return { gx, gy };
 }
 
-function clipped(g) {
+function clipped(g, clip = CLIP) {
   const o = new Float32Array(g.length);
   for (let i = 0; i < g.length; i++) {
     const v = g[i] - NOISE_FLOOR;
-    o[i] = v <= 0 ? 0 : v > CLIP - NOISE_FLOOR ? CLIP - NOISE_FLOOR : v;
+    o[i] = v <= 0 ? 0 : v > clip - NOISE_FLOOR ? clip - NOISE_FLOOR : v;
   }
   return o;
 }
@@ -387,6 +387,7 @@ function findQuad(src) {
     t: (q[0][1] + q[1][1]) / 2,
     b: (q[3][1] + q[2][1]) / 2,
   });
+  const first = best;
   for (let pass = 0; best && pass < 2; pass++) {
     const m = mid(best.q);
     const wd = m.r - m.l;
@@ -394,9 +395,11 @@ function findQuad(src) {
     let outer = null;
     for (const c of all) {
       if (c === best || c.score < 0.75 * best.score) continue;
+      // a larger quad with worse proportions is a holder, halo or shadow, not the card
+      if (Math.abs(c.dev) > Math.max(0.02, Math.abs(best.dev))) continue;
       const n = mid(c.q);
       const d = [m.l - n.l, n.r - m.r, m.t - n.t, n.b - m.b]; // how far each side sits outside the winner's
-      const lim = [0.05 * wd, 0.05 * wd, 0.05 * ht, 0.05 * ht];
+      const lim = [0.07 * wd, 0.07 * wd, 0.07 * ht, 0.07 * ht];
       if (d.some((v, i) => v < -0.75 || v > lim[i])) continue;
       if (d[0] + d[1] + d[2] + d[3] < 2) continue;
       if (!outer || c.score > outer.score) outer = c;
@@ -404,7 +407,7 @@ function findQuad(src) {
     if (!outer) break;
     best = outer;
   }
-  return { best, k, w, h };
+  return { best, first, k, w, h };
 }
 
 /**
@@ -428,6 +431,7 @@ export function detectCard(src) {
   const { gx, gy } = gradients(b, w, h);
   const cgx = clipped(gx);
   const cgy = clipped(gy);
+  const cardW = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]);
   const edge = (vertical, A, B, outward) => {
     // A and B are the side's two corners; s runs along the side, p across it
     const [as, ap, bs, bp] = vertical ? [A[1], A[0], B[1], B[0]] : [A[0], A[1], B[0], B[1]];
@@ -439,9 +443,10 @@ export function detectCard(src) {
     const cg = vertical ? cgx : cgy;
     // 1. lock on to the strongest real line near the coarse one, with plenty of freedom to tilt
     const a = lineSearch(cg, w, h, vertical, pos0, t, from, to, -4, 4, 0.03, 0.003, 0);
-    // 2. then look a little further out for a fainter parallel line: the card's true edge
-    const lo = outward < 0 ? -6 : -1;
-    const ls = lineSearch(cg, w, h, vertical, a.pos, a.t, from, to, lo, lo + 7, 0.004, 0.002, outward);
+    // 2. then look a little further out for a fainter parallel line: a dull rim is still card
+    const r2 = Math.max(3, 0.011 * cardW);
+    const lo = outward < 0 ? -r2 : -1;
+    const ls = lineSearch(cg, w, h, vertical, a.pos, a.t, from, to, lo, lo + r2 + 1, 0.004, 0.002, outward);
     return refineEdge(vertical ? gx : gy, w, h, vertical, ls.pos, ls.t, from, to, 2);
   };
   const lines = {
@@ -456,7 +461,7 @@ export function detectCard(src) {
     intersect(lines.bottom, lines.right),
     intersect(lines.bottom, lines.left),
   ].map(toSrc);
-  return { corners, found: true, debug: { coarse: coarse.best, lines } };
+  return { corners, found: true, debug: { coarse: coarse.best, first: coarse.first, lines } };
 }
 
 const SIDES = ['left', 'right', 'top', 'bottom'];
@@ -581,6 +586,23 @@ function pickArtStart(out) {
         }
       }
       if (!lines) return;
+      // A real frame's lines are the strongest ones on the card's edge. If the strongest line on
+      // most sides is not part of the pattern, the "pattern" is a coincidence among faint lines.
+      const matched = offs[0].filter((o) => [1, 2, 3].every((k) => closeness(o, offs[k]) > 0));
+      let anchored = 0;
+      choice.forEach((c, k) => {
+        const top = out[SIDES[k]].peaks.reduce((a, b) => (b.val > a.val ? b : a));
+        const d = c.mm - top.mm;
+        if (Math.abs(d) < 0.05 || matched.some((o) => Math.abs(o - d) <= TOL)) anchored++;
+      });
+      if (anchored < 3) return;
+      // and a multi-line frame has at least two solid lines per side, not one line plus noise
+      let multi = 0;
+      choice.forEach((c, k) => {
+        const solid = out[SIDES[k]].peaks.filter((p) => p.val >= 0.6 && p.mm <= c.mm + 0.05 && p.mm >= c.mm - 2.5);
+        if (solid.length >= 2) multi++;
+      });
+      if (multi < 3) return;
       const depth = choice.reduce((t, c) => t + c.mm, 0);
       const better =
         !best ||
@@ -597,10 +619,22 @@ function pickArtStart(out) {
   };
   if (opts.every((o) => o.length)) walk(0);
 
+  // 2. otherwise: the first solid line in from the edge
+  const firsts = opts.map((o) => o.find((p) => p.val >= 0.6) || o[0]);
+  if (!best) {
+    // A side that comes out worse than about 70/30 against its opposite is more often a stray
+    // line (glare, a holder's edge) than a miscut. Take a solid line near the opposite side's
+    // value if there is one; a genuinely miscut card has no such line and is left alone.
+    for (const [a, b] of [[0, 1], [1, 0], [2, 3], [3, 2]]) {
+      const fa = firsts[a];
+      const fb = firsts[b];
+      if (!fa || !fb || fb.mm / fa.mm < 2.2) continue;
+      const near = opts[a].filter((p) => p.val >= 0.6 && Math.abs(p.mm / fb.mm - 1) <= 0.25);
+      if (near.length) firsts[a] = near.reduce((x, y) => (Math.abs(y.mm - fb.mm) < Math.abs(x.mm - fb.mm) ? y : x));
+    }
+  }
   SIDES.forEach((s, k) => {
-    // 2. otherwise: the first solid line in from the edge
-    const first = opts[k].find((p) => p.val >= 0.6) || opts[k][0];
-    const c = best ? best.choice[k] : first;
+    const c = best ? best.choice[k] : firsts[k];
     out[s].mm = c ? c.mm : DEFAULT_BORDER_MM;
     out[s].found = !!c;
     out[s].candidates = out[s].peaks.map((p) => p.mm);

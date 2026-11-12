@@ -20,7 +20,7 @@ Upload, drop or paste a photo, or press **Try the sample**.
 2. **Flattens it.** The four corners are mapped to a true rectangle, so a tilted or angled photo is measured as if it were shot straight on.
 3. **Finds where the art begins.** On each side it finds the lines that run parallel to the edge.
    - If the same line spacings show up on all four sides (a multi-line frame such as silver band, black line, thin silver line, then art), the innermost line of that shared pattern is used.
-   - Otherwise the border ends at the first solid line in from each edge. Each side is judged on its own, so a lopsided card is reported as lopsided.
+   - Otherwise the border ends at the first solid line in from each edge. Each side is judged on its own, so a lopsided card is reported as lopsided. The one exception: if a side comes out worse than about 70/30 and there is another solid line close to the opposite side's value, that line is used, since a stray line is far more common than a miscut that bad.
 4. **Reports centering.** Border = card edge to where the art begins. Left/right and top/bottom are each given as a percentage split.
 
 If a detection is off, drag it: the green corners on the photo, or the pink lines on the flattened card. Hold **Shift** while dragging for fine moves. The numbers update live. **Re-detect** starts over.
@@ -35,14 +35,14 @@ If a detection is off, drag it: the green corners on the photo, or the pink line
 
 ## How well it works
 
-Checked on 7 synthetic photos with known answers and 13 real photos (12 eBay listing photos plus the sample).
+Checked on 7 synthetic photos with known answers and 13 real photos (12 eBay listing photos plus the sample), judged by eye from the overlays.
 
-- **Raw card, plain contrasting background:** works. Corners land within a pixel on the synthetic set, and a deliberately miscut test card is reported with the right lopsided borders.
-- **Silver or dark card on a light background:** the outline can land a few pixels inside the true edge, which shifts the ratios by several points.
-- **Sleeves, toploaders and magnetic cases:** unreliable. The outline often lands on the holder instead of the card.
-- **Card filling the whole photo, or cropped by it:** unreliable; there is no edge to find.
-- **Busy or high-contrast patterned backgrounds:** can fail outright.
-- **Which line is "where the art begins":** right on plain borders and on the Tag Team frame, but full-art cards with faint or no frame lines can be mis-picked.
+- **Raw card on a plain background:** works, including at a strong angle. On the synthetic set corners land within a pixel on plain dark backgrounds, and a deliberately miscut test card is reported with the right lopsided borders.
+- **Toploader or magnetic case lying flat:** worked on the two test photos; the outline lands on the card, not the holder.
+- **Two photos of the same card:** agree within about 4 points (two pairs tested).
+- **Silver or dark card on a light background:** the outline can land a few pixels inside the true edge.
+- **Card with a faint halo, shadow or mat around it:** the outline can land slightly outside the card.
+- **Sleeve on a stand, card cropped by the photo, busy patterned backgrounds:** unreliable.
 
 Always look at the overlay before trusting a number. The lines are draggable for exactly this reason.
 
@@ -70,7 +70,7 @@ node tests/run.mjs real
 python tests/sheet.py real
 ```
 
-`run.mjs` prints the numbers for each photo (`synth` or `real`), and `sheet.py` writes an overlay image per photo to `tests/local/out/` for checking by eye. `tests/run.html?set=real` shows the same thing in the browser.
+`python tests/overview.py real` tiles them into one image, and `node tests/debug.mjs <name>` prints how the outline was chosen. `run.mjs` prints the numbers for each photo (`synth` or `real`), and `sheet.py` writes an overlay image per photo to `tests/local/out/` for checking by eye. `tests/run.html?set=real` shows the same thing in the browser.
 
 ## Layout
 
