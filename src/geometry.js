@@ -45,7 +45,10 @@ export function applyH(H, x, y) {
  * H maps output pixel coordinates to source pixel coordinates. Bilinear sampling.
  */
 export function warp(src, H, outW, outH) {
-  const out = new ImageData(outW, outH);
+  const out =
+    typeof ImageData !== 'undefined'
+      ? new ImageData(outW, outH)
+      : { data: new Uint8ClampedArray(outW * outH * 4), width: outW, height: outH };
   const sd = src.data;
   const od = out.data;
   const sw = src.width;

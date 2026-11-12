@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Card Centering – batch test</title>
+<style>
+  body { margin: 12px; background: #0f1115; color: #e8eaf0; font: 12px/1.35 system-ui, sans-serif; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 10px; }
+  .cell { padding: 8px; border: 1px solid #2a2f3a; border-radius: 8px; background: #181b22; }
+  .cell div { display: flex; gap: 6px; margin-top: 6px; }
+  canvas { height: 250px; width: auto; }
+  .bad { color: #ffb347; }
+</style>
+<p>Runs the detector on every photo in <code>tests/local/list.json</code> (<code>?set=synth</code> or <code>?set=real</code>). Build the photos with <code>python tests/make_photos.py</code>.</p>
+<div id="grid"></div>
+<script type="module">
+  import { homography, warp } from '../src/geometry.js';
+  import { detectCard, detectBorders, CARD_W, CARD_H } from '../src/detect.js';
+  const S = 16, M = 2 * S, FW = CARD_W * S + 2 * M, FH = CARD_H * S + 2 * M;
+  const set = new URLSearchParams(location.search).get('set') || 'synth';
+  const only = new URLSearchParams(location.search).get('only');
+  const list = (await (await fetch('local/list.json')).json())[set].filter((e) => !only || e.name.includes(only));
+  window.results = [];
+  for (const item of list) {
+    const bmp = await createImageBitmap(await (await fetch(item.url)).blob());
+    const k = Math.min(1, 2600 / Math.max(bmp.width, bmp.height));
+    const src = document.createElement('canvas');
+    src.width = Math.round(bmp.width * k); src.height = Math.round(bmp.height * k);
+    const sctx = src.getContext('2d', { willReadFrequently: true });
+    sctx.drawImage(bmp, 0, 0, src.width, src.height);
+    const t0 = performance.now();
+    const srcData = sctx.getImageData(0, 0, src.width, src.height);
+    const det = detectCard(srcData);
+    const dst = [[M, M], [M + CARD_W * S, M], [M + CARD_W * S, M + CARD_H * S], [M, M + CARD_H * S]];
+    const flat = warp(srcData, homography(dst, det.corners), FW, FH);
+    const b = detectBorders(flat, S, M);
+    const ms = Math.round(performance.now() - t0);
+    // draw
+    sctx.strokeStyle = '#35e06f'; sctx.lineWidth = Math.max(2, src.width / 300);
+    sctx.beginPath(); det.corners.forEach(([x, y], i) => (i ? sctx.lineTo(x, y) : sctx.moveTo(x, y))); sctx.closePath(); sctx.stroke();
+    const fc = document.createElement('canvas'); fc.width = FW; fc.height = FH;
+    const fctx = fc.getContext('2d'); fctx.putImageData(flat, 0, 0);
+    fctx.lineWidth = 3; fctx.strokeStyle = '#35e06f'; fctx.strokeRect(M, M, CARD_W * S, CARD_H * S);
+    fctx.strokeStyle = '#ff4fd8'; fctx.beginPath();
+    const L = M + b.left.mm * S, R = M + (CARD_W - b.right.mm) * S, T = M + b.top.mm * S, B = M + (CARD_H - b.bottom.mm) * S;
+    fctx.moveTo(L, M); fctx.lineTo(L, FH - M); fctx.moveTo(R, M); fctx.lineTo(R, FH - M);
+    fctx.moveTo(M, T); fctx.lineTo(FW - M, T); fctx.moveTo(M, B); fctx.lineTo(FW - M, B); fctx.stroke();
+    const lr = (100 * b.left.mm) / (b.left.mm + b.right.mm), tb = (100 * b.top.mm) / (b.top.mm + b.bottom.mm);
+    let err = null;
+    if (item.truth) err = Math.max(...det.corners.map(([x, y], i) => Math.hypot(x - item.truth[i][0], y - item.truth[i][1])));
+    const res = { name: item.name, found: det.found, lr: +lr.toFixed(1), tb: +tb.toFixed(1), mm: ['left', 'right', 'top', 'bottom'].map((s) => +b[s].mm.toFixed(2)), cornerErr: err == null ? null : +err.toFixed(1), ms };
+    window.results.push(res);
+    const cell = document.createElement('div'); cell.className = 'cell';
+    cell.innerHTML = `<b>${item.name}</b> — L/R ${lr.toFixed(1)}/${(100 - lr).toFixed(1)} · T/B ${tb.toFixed(1)}/${(100 - tb).toFixed(1)}<br>mm L ${res.mm[0]} R ${res.mm[1]} T ${res.mm[2]} B ${res.mm[3]}${err == null ? '' : ` · corner error ${res.cornerErr}px`} · ${ms} ms${det.found ? '' : ' <span class="bad">card not found</span>'}`;
+    const row = document.createElement('div'); row.append(src, fc); cell.append(row);
+    document.getElementById('grid').append(cell);
+  }
+  window.done = true;
+</script>

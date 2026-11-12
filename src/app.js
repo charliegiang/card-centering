@@ -28,6 +28,7 @@ const state = {
 state.flatCanvas.width = FW;
 state.flatCanvas.height = FH;
 window.cc = state; // handy for debugging from the console
+state.loadUrl = async (url) => load(await (await fetch(url)).blob());
 
 // ---------- pipeline ----------
 
@@ -49,7 +50,7 @@ async function load(blob) {
 }
 
 function detectAll() {
-  const res = detectCard(state.srcCanvas);
+  const res = detectCard(state.src);
   state.corners = res.corners;
   state.cardFound = res.found;
   state.debug = res.debug;
