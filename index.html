@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Card Centering</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Card Centering</h1>
+      <div class="actions">
+        <label class="btn primary">
+          Upload photo
+          <input id="file" type="file" accept="image/*" hidden />
+        </label>
+        <button id="sample" class="btn">Try the sample</button>
+        <button id="redetect" class="btn" hidden>Re-detect</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="drop">
+        <p class="big">Drop a card photo here</p>
+        <p>or use <strong>Upload photo</strong>. The card is found, flattened and measured automatically. Nothing leaves your computer.</p>
+        <p class="hint">Best results: card upright, shot straight on, plain dark background, no glare on the borders.</p>
+      </section>
+
+      <section id="work" hidden>
+        <div class="pane">
+          <h2>Photo <small>drag a corner if the outline misses the card · hold Shift for fine moves</small></h2>
+          <div class="stage"><canvas id="photo"></canvas></div>
+        </div>
+        <div class="pane">
+          <h2>Flattened <small>drag a pink line if it isn't where the art begins</small></h2>
+          <div class="stage"><canvas id="flat"></canvas></div>
+        </div>
+        <aside id="results">
+          <p id="status" class="status" hidden></p>
+          <div class="ratio">
+            <h3>Left / Right</h3>
+            <p class="num" id="lr">–</p>
+            <div class="bar"><span id="lrbar"></span></div>
+          </div>
+          <div class="ratio">
+            <h3>Top / Bottom</h3>
+            <p class="num" id="tb">–</p>
+            <div class="bar"><span id="tbbar"></span></div>
+          </div>
+          <table>
+            <thead><tr><th>Side</th><th>Border</th></tr></thead>
+            <tbody>
+              <tr><td>Left</td><td id="mm-left"></td></tr>
+              <tr><td>Right</td><td id="mm-right"></td></tr>
+              <tr><td>Top</td><td id="mm-top"></td></tr>
+              <tr><td>Bottom</td><td id="mm-bottom"></td></tr>
+            </tbody>
+          </table>
+          <p id="grade" class="grade"></p>
+          <p class="hint">Borders are measured from the card edge to where the art begins, assuming a standard 63 × 88 mm card.</p>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
